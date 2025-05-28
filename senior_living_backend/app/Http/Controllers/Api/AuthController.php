@@ -19,20 +19,23 @@ class AuthController extends Controller
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
-            'device_name' => 'required|string', // Nama perangkat (e.g., "Abi Dafa Phone")
+            'device_name' => 'required|string',
         ]);
 
         $user = User::where('email', $request->email)
             ->with('patient')
             ->first();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['Email atau password salah.'],
-            ]);
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email atau password salah.'
+            ], 401);
         }
 
-        // Buat token Sanctum
+        // Optional: Clear existing tokens
+        // $user->tokens()->delete();
+
         $token = $user->createToken($request->device_name)->plainTextToken;
 
         $userData = $user->toArray();
@@ -40,17 +43,13 @@ class AuthController extends Controller
             $userData['age'] = $user->patient->age;
             $userData['patient_id'] = $user->patient->id;
             $userData['birth_date'] = $user->patient->birth_date?->toDateString();
-        } else {
-            $userData['age'] = null;
-            $userData['patient_id'] = null;
-            $userData['birth_date'] = null;
         }
 
-        // Kembalikan response berisi user dan token
         return response()->json([
+            'success' => true,
             'message' => 'Login berhasil',
             'user' => $userData,
-            'token' => $token, // Kirim token
+            'token' => $token,
         ]);
     }
 

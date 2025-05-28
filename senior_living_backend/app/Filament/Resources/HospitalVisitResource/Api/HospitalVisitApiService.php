@@ -13,11 +13,11 @@ class HospitalVisitApiService extends ApiService
     public static function handlers() : array
     {
         return [
+            Handlers\PaginationHandler::class,
+            Handlers\DetailHandler::class,
             Handlers\CreateHandler::class,
             Handlers\UpdateHandler::class,
-            Handlers\DeleteHandler::class,
-            Handlers\PaginationHandler::class,
-            Handlers\DetailHandler::class
+            Handlers\DeleteHandler::class
         ];
 
     }

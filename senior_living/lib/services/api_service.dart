@@ -1,15 +1,25 @@
 // lib/services/api_service.dart
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:intl/intl.dart';
 import '../models/health_record.dart'; // Pastikan path ini benar
 import '../models/user_model.dart'; // Anda mungkin perlu model User
+import '../models/hospital_visit.dart'; // <-- Tambahkan import ini
 
 class ApiService {
-  // Gunakan 10.0.2.2 untuk emulator Android agar bisa akses localhost mesin
-  static const String _baseUrl = 'http://127.0.0.1:8000/api';
+  // Make all static constants const
+  static const String _serverBaseUrl = 'http://127.0.0.1:8000';
+  static const String _publicApiBaseUrl = '$_serverBaseUrl/api';
+  static const String _protectedApiBaseUrl = '$_serverBaseUrl/api/admin';
   static const String _tokenKey = 'auth_token';
-  static const String _userDataKey = 'user_data'; // Untuk menyimpan data user
+  static const String _userDataKey = 'user_data';
+
+  // Add const constructor
+  const ApiService();
 
   // Fungsi untuk menyimpan token dan data user
   Future<void> _saveAuthData(
@@ -44,15 +54,38 @@ class ApiService {
     // Anda juga bisa memanggil endpoint logout API di sini jika ada
   }
 
-  Future<Map<String, dynamic>?> login(String email, String password) async {
-    final String apiUrl = '$_baseUrl/login';
-    const String deviceName = "flutter_app_device";
-
+  Future<String> _getDeviceName() async {
+    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+    String deviceName = 'UnknownDevice';
     try {
+      if (kIsWeb) {
+        deviceName = 'WebApp';
+      } else if (Platform.isAndroid) {
+        AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+        deviceName = androidInfo.model ?? 'AndroidDevice';
+      } else if (Platform.isIOS) {
+        IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+        deviceName = iosInfo.utsname.machine ?? 'iOSDevice';
+      } else if (Platform.isWindows) {
+        WindowsDeviceInfo windowsInfo = await deviceInfo.windowsInfo;
+        deviceName = windowsInfo.computerName;
+      }
+    } catch (e) {
+      print("Error getting device info: $e");
+    }
+    return deviceName
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '');
+  }
+
+  Future<Map<String, dynamic>?> login(String email, String password) async {
+    try {
+      String deviceName = await _getDeviceName();
+
       final response = await http.post(
-        Uri.parse(apiUrl),
+        Uri.parse('$_publicApiBaseUrl/login'),
         headers: {
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: jsonEncode({
@@ -62,7 +95,11 @@ class ApiService {
         }),
       );
 
-      print("DEBUG Login API Response: ${response.body}");
+      print(
+          'DEBUG Login Request URL: ${Uri.parse('$_publicApiBaseUrl/login')}');
+      print('DEBUG Login Request Device: $deviceName');
+      print('DEBUG Login Response Status: ${response.statusCode}');
+      print('DEBUG Login Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
@@ -70,8 +107,8 @@ class ApiService {
         if (responseData.containsKey('token') &&
             responseData.containsKey('user')) {
           await _saveAuthData(responseData['token'], responseData['user']);
-          final User user =
-              User.fromJson(responseData['user'] as Map<String, dynamic>);
+          final UserModel user =
+              UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
           return {
             'success': true,
             'user': user.toJson(), // Convert back to map for consistency
@@ -87,10 +124,10 @@ class ApiService {
         'message': errorData['message'] ?? 'Login gagal'
       };
     } catch (e) {
-      print('Login error: $e');
+      print('DEBUG Login Exception: $e');
       return {
         'success': false,
-        'message': 'Terjadi kesalahan: ${e.toString()}'
+        'message': 'Terjadi kesalahan: $e',
       };
     }
   }
@@ -101,13 +138,13 @@ class ApiService {
     required String password,
     required String passwordConfirmation,
   }) async {
-    final String apiUrl = '$_baseUrl/register';
+    final String _baseUrl = 'http://127.0.0.1:8000/api';
     const String deviceName =
         "flutter_app_device"; // Atau dapatkan dari device info
 
     try {
       final response = await http.post(
-        Uri.parse(apiUrl),
+        Uri.parse(_baseUrl),
         headers: {
           'Content-Type': 'application/json; charset=UTF-8',
           'Accept': 'application/json',
@@ -162,7 +199,7 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> simpanCatatanKesehatan({
-    required String patientId,
+    required int patientId,
     required DateTime tanggalPemeriksaan,
     String? tekananDarah,
     String? spo2,
@@ -173,45 +210,74 @@ class ApiService {
   }) async {
     final String? token = await getToken();
     if (token == null) {
-      return {
-        'success': false,
-        'message': 'Token tidak ditemukan, silakan login ulang.'
-      };
+      return {'success': false, 'message': 'Token tidak ditemukan'};
     }
 
-    Map<String, dynamic> dataPemeriksaan = {
-      'patient_id': patientId,
-      'checkup_date': tanggalPemeriksaan.toIso8601String().substring(0, 10),
-      if (tekananDarah?.isNotEmpty ?? false) 'blood_pressure': tekananDarah,
-      if (spo2?.isNotEmpty ?? false) 'oxygen_saturation': spo2,
-      if (gulaDarah?.isNotEmpty ?? false) 'blood_sugar_level': gulaDarah,
-      if (kolesterol?.isNotEmpty ?? false) 'cholesterol_level': kolesterol,
-      if (asamUrat?.isNotEmpty ?? false) 'uric_acid_level': asamUrat,
-      'notes': (catatan == null || catatan.isEmpty) ? null : catatan,
-    };
-
-    print("DEBUG - Sending CREATE data: ${jsonEncode(dataPemeriksaan)}");
-
     try {
+      // Format the date to match API expectations (YYYY-MM-DD)
+      final formattedDate = DateFormat('yyyy-MM-dd').format(tanggalPemeriksaan);
+
+      final Map<String, dynamic> requestBody = {
+        'patient_id': patientId,
+        'checkup_date': formattedDate,
+      };
+
+      // Only add non-null values to the request body with correct field names
+      if (tekananDarah?.isNotEmpty ?? false) {
+        requestBody['blood_pressure'] = tekananDarah;
+      }
+      if (spo2?.isNotEmpty ?? false) {
+        requestBody['oxygen_saturation'] = int.parse(spo2!);
+      }
+      if (gulaDarah?.isNotEmpty ?? false) {
+        requestBody['blood_sugar'] =
+            int.parse(gulaDarah!); // Changed from blood_sugar_level
+      }
+      if (kolesterol?.isNotEmpty ?? false) {
+        requestBody['cholesterol'] =
+            int.parse(kolesterol!); // Changed from cholesterol_level
+      }
+      if (asamUrat?.isNotEmpty ?? false) {
+        requestBody['uric_acid'] =
+            double.parse(asamUrat!); // Changed from uric_acid_level
+      }
+      if (catatan?.isNotEmpty ?? false) {
+        requestBody['notes'] = catatan;
+      }
+
+      print('DEBUG - Sending request body: ${jsonEncode(requestBody)}');
+
       final response = await http.post(
-        Uri.parse('$_baseUrl/checkups'),
+        Uri.parse('$_protectedApiBaseUrl/checkups'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode(dataPemeriksaan),
+        body: jsonEncode(requestBody),
       );
 
       final responseBody = jsonDecode(response.body);
-      return {
-        'success': response.statusCode == 201,
-        'message': responseBody['message'] ??
-            (response.statusCode == 201
-                ? 'Berhasil disimpan'
-                : 'Gagal menyimpan'),
-        'data': responseBody['data'],
-      };
+      print('DEBUG - Response status: ${response.statusCode}');
+      print('DEBUG - Response body: ${response.body}');
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': responseBody['message'] ?? 'Berhasil disimpan',
+          'data': responseBody['data'],
+        };
+      } else {
+        String errorMessage = responseBody['message'] ?? 'Gagal menyimpan data';
+        if (responseBody.containsKey('errors')) {
+          final errors = responseBody['errors'] as Map<String, dynamic>;
+          errorMessage = errors.values.expand((e) => e as List).join('\n');
+        }
+        return {
+          'success': false,
+          'message': errorMessage,
+        };
+      }
     } catch (e) {
       print('Error creating health record: $e');
       return {
@@ -223,7 +289,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateCatatanKesehatan({
     required String recordId,
-    required String patientId,
+    required int patientId,
     required DateTime tanggalPemeriksaan,
     String? tekananDarah,
     String? spo2,
@@ -234,55 +300,68 @@ class ApiService {
   }) async {
     final String? token = await getToken();
     if (token == null) {
-      return {
-        'success': false,
-        'message': 'Token tidak ditemukan, silakan login ulang.'
-      };
+      return {'success': false, 'message': 'Token tidak ditemukan'};
     }
 
-    Map<String, dynamic> dataPemeriksaan = {
-      'checkup_date': tanggalPemeriksaan.toIso8601String().substring(0, 10),
-    };
-
-    if (tekananDarah != null)
-      dataPemeriksaan['blood_pressure'] =
-          tekananDarah.isNotEmpty ? tekananDarah : null;
-    if (spo2 != null)
-      dataPemeriksaan['oxygen_saturation'] = spo2.isNotEmpty ? spo2 : null;
-    if (gulaDarah != null)
-      dataPemeriksaan['blood_sugar_level'] =
-          gulaDarah.isNotEmpty ? gulaDarah : null;
-    if (kolesterol != null)
-      dataPemeriksaan['cholesterol_level'] =
-          kolesterol.isNotEmpty ? kolesterol : null;
-    if (asamUrat != null)
-      dataPemeriksaan['uric_acid_level'] =
-          asamUrat.isNotEmpty ? asamUrat : null;
-    if (catatan != null) dataPemeriksaan['notes'] = catatan;
-
-    print(
-        "DEBUG - Sending UPDATE data for ID $recordId: ${jsonEncode(dataPemeriksaan)}");
-
     try {
+      final Map<String, dynamic> requestBody = {
+        'checkup_date': DateFormat('yyyy-MM-dd').format(tanggalPemeriksaan),
+      };
+
+      // Only add non-null values with correct field names
+      if (tekananDarah?.isNotEmpty ?? false) {
+        requestBody['blood_pressure'] = tekananDarah;
+      }
+      if (spo2?.isNotEmpty ?? false) {
+        requestBody['oxygen_saturation'] = int.parse(spo2!);
+      }
+      if (gulaDarah?.isNotEmpty ?? false) {
+        requestBody['blood_sugar'] = int.parse(gulaDarah!);
+      }
+      if (kolesterol?.isNotEmpty ?? false) {
+        requestBody['cholesterol'] = int.parse(kolesterol!);
+      }
+      if (asamUrat?.isNotEmpty ?? false) {
+        requestBody['uric_acid'] = double.parse(asamUrat!);
+      }
+      if (catatan?.isNotEmpty ?? false) {
+        requestBody['notes'] = catatan;
+      }
+
+      print('DEBUG - Sending UPDATE request body: ${jsonEncode(requestBody)}');
+
       final response = await http.put(
-        Uri.parse('$_baseUrl/checkups/$recordId'),
+        Uri.parse('$_protectedApiBaseUrl/checkups/$recordId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode(dataPemeriksaan),
+        body: jsonEncode(requestBody),
       );
 
       final responseBody = jsonDecode(response.body);
-      return {
-        'success': response.statusCode == 200,
-        'message': responseBody['message'] ??
-            (response.statusCode == 200
-                ? 'Berhasil diperbarui'
-                : 'Gagal memperbarui'),
-        'data': responseBody['data'],
-      };
+      print('DEBUG - Response status: ${response.statusCode}');
+      print('DEBUG - Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': responseBody['message'] ?? 'Berhasil diperbarui',
+          'data': responseBody['data'],
+        };
+      } else {
+        String errorMessage =
+            responseBody['message'] ?? 'Gagal memperbarui data';
+        if (responseBody.containsKey('errors')) {
+          final errors = responseBody['errors'] as Map<String, dynamic>;
+          errorMessage = errors.values.expand((e) => e as List).join('\n');
+        }
+        return {
+          'success': false,
+          'message': errorMessage,
+        };
+      }
     } catch (e) {
       print('Error updating health record: $e');
       return {
@@ -292,24 +371,20 @@ class ApiService {
     }
   }
 
-  Future<List<HealthRecord>?> getCatatanKesehatan({String? patientId}) async {
+  Future<List<HealthRecord>?> getCatatanKesehatan(
+      {required int patientId}) async {
     final String? token = await getToken();
-    if (token == null) {
-      print("Token tidak ditemukan untuk getCatatanKesehatan.");
-      return null;
-    }
+    if (token == null) return null;
 
-    String apiUrl = '$_baseUrl/checkups';
-    if (patientId != null && patientId.isNotEmpty) {
-      apiUrl += '?patient_id=$patientId';
-    }
+    final apiUrl = '$_protectedApiBaseUrl/checkups?patient_id=$patientId';
+    print("DEBUG: Fetching health records from $apiUrl");
 
     try {
       final response = await http.get(
         Uri.parse(apiUrl),
         headers: {
           'Accept': 'application/json',
-          'Authorization': 'Bearer $token', // Gunakan token dinamis
+          'Authorization': 'Bearer $token',
         },
       );
 
@@ -366,15 +441,11 @@ class ApiService {
 
   Future<Map<String, dynamic>> deleteCatatanKesehatan(String recordId) async {
     final String? token = await getToken();
-    if (token == null) {
-      return {
-        'success': false,
-        'message': 'Token tidak ditemukan, silakan login ulang.'
-      };
-    }
+    if (token == null)
+      return {'success': false, 'message': 'Token tidak ditemukan'};
 
-    final String apiUrl = '$_baseUrl/checkups/$recordId';
-    print("DEBUG - Deleting record ID $recordId from API");
+    final apiUrl = '$_protectedApiBaseUrl/checkups/$recordId';
+    print("DEBUG: Deleting health record from $apiUrl");
 
     try {
       final response = await http.delete(
@@ -415,6 +486,89 @@ class ApiService {
         'success': false,
         'message': 'Terjadi kesalahan: ${e.toString()}'
       };
+    }
+  }
+
+  // Method baru untuk mengambil riwayat kontrol
+  Future<List<HospitalVisit>> getHospitalVisits(int patientId) async {
+    final token = await getToken();
+    if (token == null) {
+      throw Exception('Token not found');
+    }
+
+    final url = Uri.parse(
+        '$_protectedApiBaseUrl/hospital-visits?patient_id=$patientId');
+    print("DEBUG: Fetching hospital visits from $url");
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    print("DEBUG: Hospital visits response status: ${response.statusCode}");
+    print("DEBUG: Hospital visits response body: ${response.body}");
+
+    if (response.statusCode == 200) {
+      final decodedBody = jsonDecode(response.body);
+
+      // Handle Rupadana pagination response
+      final List<dynamic> data = decodedBody is Map
+          ? (decodedBody['data'] as List? ?? [])
+          : (decodedBody as List? ?? []);
+
+      final hospitalVisits = data
+          .map<HospitalVisit>(
+              (item) => HospitalVisit.fromJson(item as Map<String, dynamic>))
+          .toList();
+
+      print("DEBUG: Parsed ${hospitalVisits.length} hospital visits.");
+      if (hospitalVisits.isNotEmpty) {
+        print(
+            "DEBUG: First parsed hospital visit: ID ${hospitalVisits.first.id}, Hospital: ${hospitalVisits.first.hospitalName}");
+      }
+
+      return hospitalVisits;
+    } else {
+      print('Failed to load hospital visits: ${response.body}');
+      throw Exception('Failed to load hospital visits');
+    }
+  }
+
+  // Method baru untuk menambah riwayat kontrol
+  Future<HospitalVisit> addHospitalVisit(HospitalVisit hospitalVisit) async {
+    final token = await getToken();
+    if (token == null) {
+      throw Exception('Token not found');
+    }
+
+    final url = Uri.parse('$_protectedApiBaseUrl/hospital-visits');
+    print("DEBUG: Adding hospital visit to $url");
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(hospitalVisit.toJson()),
+    );
+
+    print("DEBUG: Add hospital visit response status: ${response.statusCode}");
+    print("DEBUG: Add hospital visit response body: ${response.body}");
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      final data = responseData is Map
+          ? (responseData['data'] ?? responseData)
+          : responseData;
+      return HospitalVisit.fromJson(data as Map<String, dynamic>);
+    } else {
+      print('Failed to add hospital visit: ${response.body}');
+      throw Exception('Failed to add hospital visit');
     }
   }
 }

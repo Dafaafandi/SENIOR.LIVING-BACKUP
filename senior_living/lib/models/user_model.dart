@@ -1,19 +1,68 @@
 // lib/models/user_model.dart
 
-class User {
+// Kelas Patient untuk data pasien yang ter-nesting
+class Patient {
+  final int id;
+  final String name;
+  final String? birthDate; // Format dari API: "YYYY-MM-DDTHH:mm:ss.000000Z"
+  final String? gender;
+  final String? address;
+  final String? medicalHistory;
+  final String? photo;
+  final int userId;
+
+  Patient({
+    required this.id,
+    required this.name,
+    this.birthDate,
+    this.gender,
+    this.address,
+    this.medicalHistory,
+    this.photo,
+    required this.userId,
+  });
+
+  factory Patient.fromJson(Map<String, dynamic> json) {
+    return Patient(
+      id: json['id'] as int,
+      name: json['name'] as String,
+      birthDate: json['birth_date'] as String?,
+      gender: json['gender'] as String?,
+      address: json['address'] as String?,
+      medicalHistory: json['medical_history'] as String?,
+      photo: json['photo'] as String?,
+      userId: json['user_id'] as int,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'birth_date': birthDate,
+      'gender': gender,
+      'address': address,
+      'medical_history': medicalHistory,
+      'photo': photo,
+      'user_id': userId,
+    };
+  }
+}
+
+// Kelas UserModel sebagai representasi utama data pengguna dari API
+class UserModel {
   final int id;
   final String name;
   final String email;
-  final String? emailVerifiedAt; // Bisa jadi null jika belum diverifikasi
-  final String? birthDate;
-  final int? age;
-  final int? patientId;
+  final String? emailVerifiedAt;
+  final String? birthDate; // birth_date di level user dari API
+  final int? age; // age di level user dari API
+  final int? patientId; // patient_id di level user dari API
+  final Patient? patient; // Objek Patient yang ter-nesting
   final String createdAt;
   final String updatedAt;
-  // Tambahkan field lain jika ada, misalnya 'patientId', dll.
-  // final String? patientId; // Atau int, sesuaikan dengan tipe data dari API
 
-  User({
+  UserModel({
     required this.id,
     required this.name,
     required this.email,
@@ -21,29 +70,28 @@ class User {
     this.birthDate,
     this.age,
     this.patientId,
+    this.patient,
     required this.createdAt,
     required this.updatedAt,
-    // this.patientId,
   });
 
-  /// Creates a User instance from JSON map received from API
-  factory User.fromJson(Map<String, dynamic> json) {
-    return User(
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
       id: json['id'] as int,
       name: json['name'] as String,
       email: json['email'] as String,
       emailVerifiedAt: json['email_verified_at'] as String?,
       birthDate: json['birth_date'] as String?,
-      age: json['age'] as int?, // Age calculated from backend
-      patientId:
-          json['patient_id'] as int?, // Patient ID if user has patient profile
+      age: json['age'] as int?,
+      patientId: json['patient_id'] as int?,
+      patient: json['patient'] != null
+          ? Patient.fromJson(json['patient'] as Map<String, dynamic>)
+          : null,
       createdAt: json['created_at'] as String,
       updatedAt: json['updated_at'] as String,
     );
   }
 
-  // Method untuk mengonversi instance User menjadi Map (JSON)
-  // Berguna jika Anda perlu mengirim objek User kembali ke API (meskipun jarang untuk model User)
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -53,9 +101,9 @@ class User {
       'birth_date': birthDate,
       'age': age,
       'patient_id': patientId,
+      'patient': patient?.toJson(),
       'created_at': createdAt,
       'updated_at': updatedAt,
-      // 'patient_id': patientId, // Uncomment jika ada field 'patient_id'
     };
   }
 }

@@ -8,14 +8,36 @@ import '../../main.dart';
 import '../../services/api_service.dart';
 
 class HealthRecordScreen extends StatefulWidget {
-  final String patientId; // ID pasien yang datanya akan dikelola
-  const HealthRecordScreen({super.key, required this.patientId});
+  final int patientId;
+  final HealthRecord? recordToEdit;
+  final ApiService apiService;
+
+  const HealthRecordScreen({
+    super.key,
+    required this.patientId,
+    this.recordToEdit,
+    ApiService? apiService,
+  }) : apiService = apiService ?? const ApiService(); // Add const here
 
   @override
   State<HealthRecordScreen> createState() => _HealthRecordScreenState();
 }
 
 class _HealthRecordScreenState extends State<HealthRecordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  bool _isSubmitting = false;
+  bool _isEditMode = false;
+  DateTime _selectedDate = DateTime.now();
+
+  // Form controllers
+  final TextEditingController bpController = TextEditingController();
+  final TextEditingController spo2Controller = TextEditingController();
+  final TextEditingController sugarController = TextEditingController();
+  final TextEditingController cholesterolController = TextEditingController();
+  final TextEditingController uricAcidController = TextEditingController();
+  final TextEditingController notesController = TextEditingController();
+
+  // Existing variables
   late final Box<HealthRecord> healthRecordBox;
   final DateFormat _dateFormat = DateFormat('dd MMMM yyyy', 'id_ID');
   final ApiService _apiService = ApiService();
@@ -349,6 +371,87 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
         builder: (BuildContext context, StateSetter setDialogState) {
           bool _isDialogSubmitting = false;
 
+          Future<void> _handleFormSubmit() async {
+            if (!formKey.currentState!.validate()) return;
+
+            setDialogState(() => _isDialogSubmitting = true);
+            try {
+              // Format numeric values properly
+              final bloodPressure = bpController.text.trim();
+              final spo2Value = spo2Controller.text.isNotEmpty
+                  ? int.tryParse(spo2Controller.text.trim())
+                  : null;
+              final bloodSugarValue = sugarController.text.isNotEmpty
+                  ? int.tryParse(sugarController.text.trim())
+                  : null;
+              final cholesterolValue = cholesterolController.text.isNotEmpty
+                  ? int.tryParse(cholesterolController.text.trim())
+                  : null;
+              final uricAcidValue = uricAcidController.text.isNotEmpty
+                  ? double.tryParse(
+                      uricAcidController.text.trim().replaceAll(',', '.'))
+                  : null;
+
+              Map<String, dynamic> result;
+
+              if (isEditMode) {
+                result = await widget.apiService.updateCatatanKesehatan(
+                  recordId: recordToEdit!.id,
+                  patientId: widget.patientId,
+                  tanggalPemeriksaan: selectedDate,
+                  tekananDarah: bloodPressure,
+                  spo2: spo2Value?.toString(),
+                  gulaDarah: bloodSugarValue?.toString(),
+                  kolesterol: cholesterolValue?.toString(),
+                  asamUrat: uricAcidValue?.toString(),
+                  catatan: notesController.text.trim(),
+                );
+              } else {
+                result = await widget.apiService.simpanCatatanKesehatan(
+                  patientId: widget.patientId,
+                  tanggalPemeriksaan: selectedDate,
+                  tekananDarah: bloodPressure,
+                  spo2: spo2Value?.toString(),
+                  gulaDarah: bloodSugarValue?.toString(),
+                  kolesterol: cholesterolValue?.toString(),
+                  asamUrat: uricAcidValue?.toString(),
+                  catatan: notesController.text.trim(),
+                );
+              }
+
+              if (result['success']) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result['message'])),
+                  );
+                  Navigator.pop(context, true);
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result['message']),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: ${e.toString()}'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            } finally {
+              if (mounted) {
+                setDialogState(() => _isDialogSubmitting = false);
+              }
+            }
+          }
+
           return AlertDialog(
             title: Text(isEditMode
                 ? 'Edit Catatan Kesehatan'
@@ -384,14 +487,32 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                     TextFormField(
                       controller: bpController,
                       decoration: const InputDecoration(
-                          labelText: 'Tekanan Darah (cth: 120/80)'),
-                      keyboardType:
-                          TextInputType.text, // Atau number jika hanya angka
+                        labelText: 'Tekanan Darah (cth: 120/80)',
+                      ),
+                      keyboardType: TextInputType.text,
+                      validator: (value) {
+                        if (value?.isNotEmpty == true &&
+                            !RegExp(r'^\d{2,3}/\d{2,3}$').hasMatch(value!)) {
+                          return 'Format harus berupa angka/angka (mis: 120/80)';
+                        }
+                        return null;
+                      },
                     ),
                     TextFormField(
                       controller: spo2Controller,
                       decoration: const InputDecoration(labelText: 'SpO2 (%)'),
                       keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value?.isNotEmpty == true) {
+                          final intValue = int.tryParse(value!);
+                          if (intValue == null ||
+                              intValue < 1 ||
+                              intValue > 100) {
+                            return 'SpO2 harus berupa angka 1-100';
+                          }
+                        }
+                        return null;
+                      },
                     ),
                     TextFormField(
                       controller: sugarController,
@@ -399,7 +520,6 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                           labelText: 'Gula Darah (mg/dL)'),
                       keyboardType: TextInputType.number,
                     ),
-                    // New fields
                     TextFormField(
                       controller: cholesterolController,
                       decoration: const InputDecoration(
@@ -413,37 +533,12 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                           hintText: 'Contoh: 6.2 atau 6,2'),
                       keyboardType:
                           TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d*([.,])?\d{0,1}$')),
-                        TextInputFormatter.withFunction((oldValue, newValue) {
-                          final text = newValue.text;
-                          if (text.contains('.') && text.contains(',')) {
-                            return oldValue;
-                          }
-                          if (text.split('.').length > 2 ||
-                              text.split(',').length > 2) {
-                            return oldValue;
-                          }
-                          return newValue;
-                        }),
-                      ],
-                      validator: (value) {
-                        if (value?.isNotEmpty == true) {
-                          final normalizedValue = value!.replaceAll(',', '.');
-                          if (double.tryParse(normalizedValue) == null) {
-                            return 'Masukkan angka desimal yang valid';
-                          }
-                        }
-                        return null;
-                      },
                     ),
                     TextFormField(
                       controller: notesController,
                       decoration: const InputDecoration(
                           labelText: 'Catatan (Opsional)'),
-                      keyboardType: TextInputType.multiline,
-                      maxLines: null, // Agar bisa multiple lines
+                      maxLines: null,
                     ),
                   ],
                 ),
@@ -456,143 +551,15 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                     _isDialogSubmitting ? null : () => Navigator.of(ctx).pop(),
               ),
               ElevatedButton(
-                onPressed: _isDialogSubmitting
-                    ? null
-                    : () async {
-                        if (formKey.currentState!.validate()) {
-                          setDialogState(() {
-                            _isDialogSubmitting = true;
-                          });
-
-                          // Format uric acid value
-                          String? formattedUricAcid;
-                          if (uricAcidController.text.isNotEmpty) {
-                            formattedUricAcid =
-                                uricAcidController.text.replaceAll(',', '.');
-                          }
-
-                          print('DEBUG - Form Values before API call:');
-                          print('Patient ID: ${widget.patientId}');
-                          print('Tanggal: $selectedDate');
-                          print('Asam Urat (raw): ${uricAcidController.text}');
-                          print('Asam Urat (formatted): $formattedUricAcid');
-                          // Add debug logging
-                          print('DEBUG - Form Values:');
-                          print('Patient ID: ${widget.patientId}');
-                          print('Tanggal: $selectedDate');
-                          print('Tekanan Darah: ${bpController.text}');
-                          print('SpO2: ${spo2Controller.text}');
-                          print('Gula Darah: ${sugarController.text}');
-                          print('Kolesterol: ${cholesterolController.text}');
-                          print('Asam Urat: ${uricAcidController.text}');
-                          print('Catatan: ${notesController.text}');
-
-                          try {
-                            Map<String, dynamic> apiResult;
-                            if (isEditMode) {
-                              apiResult =
-                                  await _apiService.updateCatatanKesehatan(
-                                recordId: recordToEdit!.id,
-                                patientId: widget.patientId,
-                                tanggalPemeriksaan: selectedDate,
-                                tekananDarah: bpController.text,
-                                spo2: spo2Controller.text,
-                                gulaDarah: sugarController.text,
-                                kolesterol: cholesterolController.text,
-                                asamUrat: formattedUricAcid,
-                                catatan: notesController.text,
-                              );
-                            } else {
-                              apiResult =
-                                  await _apiService.simpanCatatanKesehatan(
-                                patientId: widget.patientId,
-                                tanggalPemeriksaan: selectedDate,
-                                tekananDarah: bpController.text,
-                                spo2: spo2Controller.text,
-                                gulaDarah: sugarController.text,
-                                kolesterol: cholesterolController.text,
-                                asamUrat: formattedUricAcid,
-                                catatan: notesController.text,
-                              );
-                            }
-
-                            if (!mounted) return;
-
-                            if (apiResult['success'] == true) {
-                              final Map<String, dynamic>? returnedData =
-                                  apiResult['data'] as Map<String, dynamic>?;
-                              HealthRecord? processedRecord;
-
-                              if (returnedData != null) {
-                                processedRecord =
-                                    HealthRecord.fromJson(returnedData);
-                              } else if (isEditMode) {
-                                processedRecord = HealthRecord(
-                                  id: recordToEdit!.id,
-                                  date: selectedDate,
-                                  bloodPressure: bpController.text.isNotEmpty
-                                      ? bpController.text
-                                      : null,
-                                  spo2: spo2Controller.text.isNotEmpty
-                                      ? int.tryParse(spo2Controller.text)
-                                      : null,
-                                  bloodSugar: sugarController.text.isNotEmpty
-                                      ? int.tryParse(sugarController.text)
-                                      : null,
-                                  cholesterol: cholesterolController
-                                          .text.isNotEmpty
-                                      ? int.tryParse(cholesterolController.text)
-                                      : null,
-                                  uricAcid: formattedUricAcid != null
-                                      ? double.tryParse(formattedUricAcid)
-                                      : null,
-                                  notes: notesController.text.isNotEmpty
-                                      ? notesController.text
-                                      : null,
-                                );
-                              }
-
-                              if (processedRecord != null) {
-                                await healthRecordBox.put(
-                                    processedRecord.id, processedRecord);
-                              }
-
-                              Navigator.of(ctx).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(apiResult['message'] ??
-                                        (isEditMode
-                                            ? 'Catatan berhasil diperbarui!'
-                                            : 'Catatan berhasil disimpan!'))),
-                              );
-                              await _loadHealthRecords();
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(apiResult['message'] ??
-                                        'Operasi gagal.')),
-                              );
-                            }
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: ${e.toString()}')),
-                            );
-                          } finally {
-                            if (mounted) {
-                              setDialogState(() {
-                                _isDialogSubmitting = false;
-                              });
-                            }
-                          }
-                        }
-                      },
+                onPressed: _isDialogSubmitting ? null : _handleFormSubmit,
                 child: _isDialogSubmitting
                     ? const SizedBox(
-                        height: 20,
                         width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Text('Simpan'),
@@ -754,5 +721,97 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _submitHealthRecord() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      // Format numeric values properly
+      final bloodPressure = bpController.text.trim();
+      final spo2Value = spo2Controller.text.isNotEmpty
+          ? int.tryParse(spo2Controller.text.trim())
+          : null;
+      final bloodSugarValue = sugarController.text.isNotEmpty
+          ? int.tryParse(sugarController.text.trim())
+          : null;
+      final cholesterolValue = cholesterolController.text.isNotEmpty
+          ? int.tryParse(cholesterolController.text.trim())
+          : null;
+      final uricAcidValue = uricAcidController.text.isNotEmpty
+          ? double.tryParse(uricAcidController.text.trim().replaceAll(',', '.'))
+          : null;
+
+      Map<String, dynamic> result;
+
+      if (_isEditMode) {
+        result = await widget.apiService.updateCatatanKesehatan(
+          recordId: widget.recordToEdit!.id,
+          patientId: widget.patientId,
+          tanggalPemeriksaan: _selectedDate,
+          tekananDarah: bloodPressure,
+          spo2: spo2Value?.toString(),
+          gulaDarah: bloodSugarValue?.toString(),
+          kolesterol: cholesterolValue?.toString(),
+          asamUrat: uricAcidValue?.toString(),
+          catatan: notesController.text.trim(),
+        );
+      } else {
+        result = await widget.apiService.simpanCatatanKesehatan(
+          patientId: widget.patientId,
+          tanggalPemeriksaan: _selectedDate,
+          tekananDarah: bloodPressure,
+          spo2: spo2Value?.toString(),
+          gulaDarah: bloodSugarValue?.toString(),
+          kolesterol: cholesterolValue?.toString(),
+          asamUrat: uricAcidValue?.toString(),
+          catatan: notesController.text.trim(),
+        );
+      }
+
+      if (result['success']) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'])),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    bpController.dispose();
+    spo2Controller.dispose();
+    sugarController.dispose();
+    cholesterolController.dispose();
+    uricAcidController.dispose();
+    notesController.dispose();
+    super.dispose();
   }
 }

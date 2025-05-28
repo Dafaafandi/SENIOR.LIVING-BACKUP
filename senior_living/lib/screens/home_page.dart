@@ -1,81 +1,68 @@
+// lib/screens/home_page.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../widgets/bottom_nav_bar.dart';
-import '../utils/date_utils.dart';
-import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'health/health_record_screen.dart'; // Add this import
+
+//import '../widgets/bottom_nav_bar.dart'; // Jika BottomNavBar adalah widget terpisah
+// import '../utils/date_utils.dart'; // Tidak digunakan di sini
 
 class HomePage extends StatefulWidget {
   final String userName;
-  final int? userAge; // Make nullable since age might be null from User model
+  final int? userAge; // Bisa jadi null jika tidak ada
   final String healthStatus;
+  final int? patientId;
 
   const HomePage({
-    super.key,
+    Key? key,
     required this.userName,
-    this.userAge, // Remove required since it's nullable
+    this.userAge,
     required this.healthStatus,
-  });
+    this.patientId,
+  }) : super(key: key);
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
+  int _selectedIndex = 0;
   late String _currentTime;
-  String? _userName;
-  int? _userAge;
-  String? _healthStatus;
+  // State lokal tidak lagi mengambil dari ModalRoute.of(context) di didChangeDependencies
+  // karena data sudah diteruskan melalui konstruktor widget.
 
   @override
   void initState() {
     super.initState();
     _updateTime();
-    _userName = widget.userName;
-    _userAge = widget.userAge;
-    _healthStatus = widget.healthStatus;
-  }
-
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final args =
-        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-    if (args != null) {
-      setState(() {
-        _userName = args['name'] as String? ?? _userName;
-        _healthStatus = args['status'] as String? ?? _healthStatus;
-      });
-    }
+    // Data pengguna sudah ada di widget.userName, widget.userAge, widget.healthStatus
+    print(
+        "HomePage initState: patientId: ${widget.patientId}, userName: ${widget.userName}, healthStatus: ${widget.healthStatus}");
   }
 
   void _updateTime() {
-    // Format: Hari, DD MMMM YYYY HH:mm (e.g., Senin, 07 April 2025 22:10)
-    _currentTime = DateFormat(
-      'EEEE, dd MMMM yyyy HH:mm',
-      'id_ID',
-    ).format(DateTime.now());
+    _currentTime =
+        DateFormat('EEEE, dd MMMM HH:mm', 'id_ID').format(DateTime.now());
+    // Panggil setState jika ingin UI diperbarui secara berkala (misalnya, tiap menit)
+    // Timer.periodic(Duration(seconds: 1), (Timer t) => _updateTimeDisplay());
   }
+  // void _updateTimeDisplay() {
+  //   if (mounted) {
+  //     setState(() {
+  //        _currentTime = DateFormat('EEEE, dd MMMM HH:mm', 'id_ID').format(DateTime.now());
+  //     });
+  //   }
+  // }
 
   String get _ageText {
-    if (_userAge != null) {
-      return "$_userAge Tahun";
+    if (widget.userAge != null && widget.userAge! > 0) {
+      return "${widget.userAge} Tahun";
     }
     return "Umur tidak diketahui";
   }
 
-  // Add this method to get patient ID
-  Future<String?> getLoggedInUserPatientId() async {
-    // TODO: Implement your actual logic to get patient ID
-    // This could involve:
-    // 1. Getting it from secure storage
-    // 2. Getting it from your auth state
-    // 3. Making an API call
-
-    // For now, returning a mock value
-    return "1"; // Replace with actual implementation
-  }
-
+  // Metode _performLogout ada di sini
   Future<void> _performLogout() async {
-    // Show confirmation dialog
     bool? confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
@@ -97,21 +84,81 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (confirm == true && mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('token');
+        await prefs.remove('patient_id');
+        await prefs.remove('user_id');
+
+        print("DEBUG: Cleared all session data during logout");
+
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+              context, '/login', (route) => false);
+        }
+      } catch (e) {
+        print("ERROR: Failed to clear session data: $e");
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Terjadi kesalahan saat logout')),
+          );
+        }
+      }
     }
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    // Navigasi berdasarkan index BottomNavBar
+    switch (index) {
+      case 0: // Beranda - tidak melakukan apa-apa karena sudah di HomePage
+        break;
+      case 1: // Jadwal
+        Navigator.pushNamed(
+          context,
+          '/schedule',
+          arguments: {
+            'patientId': widget.patientId
+          }, // Forward patientId if needed
+        );
+        break;
+      case 2: // Kesehatan
+        if (widget.patientId != null) {
+          Navigator.pushNamed(
+            context,
+            '/health',
+            arguments: {'patientId': widget.patientId}, // patientId sudah int?
+          );
+        } else {
+          _showPatientIdError();
+        }
+        break;
+      case 3: // Pengaturan - Tambahkan jika ada
+        Navigator.pushNamed(context, '/settings');
+        break;
+    }
+  }
+
+  void _showPatientIdError() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('ID Pasien tidak tersedia.'),
+      duration: Duration(seconds: 2),
+    ));
+    print("Error: widget.patientId is null in HomePage.");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      bottomNavigationBar: const BottomNavBar(),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Updated Header with Logout
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -123,16 +170,14 @@ class _HomePageState extends State<HomePage> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue,
+                          color: Colors.blue, // Sesuaikan warna
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _currentTime,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                        ),
+                        style:
+                            const TextStyle(fontSize: 14, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -141,11 +186,11 @@ class _HomePageState extends State<HomePage> {
                       IconButton(
                         onPressed: () =>
                             Navigator.pushNamed(context, '/notification'),
-                        icon: const Icon(Icons.notifications,
+                        icon: const Icon(Icons.notifications_outlined,
                             color: Colors.grey, size: 28),
                       ),
                       IconButton(
-                        onPressed: _performLogout,
+                        onPressed: _performLogout, // Pemanggilan _performLogout
                         icon: const Icon(Icons.logout,
                             color: Colors.grey, size: 28),
                         tooltip: 'Logout',
@@ -155,16 +200,12 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
               const SizedBox(height: 24),
-
-              // Dashboard
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors
-                      .blue, // Warna background kartu (sesuaikan dari Figma jika beda)
+                  color: Colors.blue,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
-                    // Contoh shadow (sesuaikan dari Figma)
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
                       blurRadius: 8,
@@ -174,54 +215,54 @@ class _HomePageState extends State<HomePage> {
                 ),
                 child: Row(
                   children: [
-                    // Foto Profil
                     const CircleAvatar(
                       radius: 30,
                       backgroundColor: Colors.white,
-                      // Ganti dengan Image.network atau asset jika foto dinamis
                       child: Icon(Icons.person, size: 30, color: Colors.blue),
                     ),
                     const SizedBox(width: 16),
-                    // Nama, Umur, Tombol
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _userName ?? "Pengguna",
+                            widget.userName,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 17, // Sedikit lebih besar
+                              fontSize: 17,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           Text(
                             _ageText,
                             style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
+                                color: Colors.white70, fontSize: 14),
                           ),
                           const SizedBox(height: 8),
-                          // Tombol Lihat Data & Jadwal
                           Row(
                             children: [
                               _buildInfoButton(
                                 context: context,
                                 label: "Data Kesehatan",
                                 icon: Icons.favorite_border,
-                                onPressed: () =>
-                                    Navigator.pushNamed(context, '/health'),
+                                onPressed: () {
+                                  if (widget.patientId != null) {
+                                    Navigator.pushNamed(context, '/health',
+                                        arguments: {
+                                          'patientId': widget.patientId
+                                        });
+                                  } else {
+                                    _showPatientIdError();
+                                  }
+                                },
                               ),
                               const SizedBox(width: 8),
                               _buildInfoButton(
                                 context: context,
                                 label: "Jadwal",
                                 icon: Icons.calendar_today_outlined,
-                                onPressed: () => Navigator.pushNamed(
-                                  context,
-                                  '/schedule',
-                                ),
+                                onPressed: () =>
+                                    Navigator.pushNamed(context, '/schedule'),
                               ),
                             ],
                           ),
@@ -229,21 +270,21 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Status Kesehatan (contoh, bisa dibuat lebih dinamis)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                          horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        // Ganti warna berdasarkan status
-                        color: _healthStatus == "Normal"
-                            ? Colors.green
-                            : Colors.orange,
+                        color: widget.healthStatus.toLowerCase() == "normal" ||
+                                widget.healthStatus.toLowerCase() == "baik"
+                            ? Colors.green.shade400
+                            : (widget.healthStatus.toLowerCase() ==
+                                    "tidak diketahui"
+                                ? Colors.grey.shade400
+                                : Colors.orange.shade400),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _healthStatus ?? "Status tidak diketahui",
+                        widget.healthStatus,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -254,8 +295,7 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 24), // Spasi setelah kartu info
-              // Akses Cepat
+              const SizedBox(height: 24),
               const Text(
                 "Akses Cepat",
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -266,21 +306,40 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   _quickAccessButton(
                     context,
-                    Icons.edit_calendar,
+                    Icons.edit_calendar_outlined,
                     "Tambah Jadwal",
                     () => Navigator.pushNamed(context, '/schedule'),
                   ),
                   _quickAccessButton(
                     context,
-                    Icons.assignment_add,
+                    Icons.medical_services_outlined,
                     "Catat Pemeriksaan",
-                    () => Navigator.pushNamed(context, '/health'),
+                    () {
+                      if (widget.patientId != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => HealthRecordScreen(
+                                patientId: widget.patientId!),
+                          ),
+                        );
+                      } else {
+                        _showPatientIdError();
+                      }
+                    },
                   ),
                   _quickAccessButton(
                     context,
-                    Icons.history,
+                    Icons.history_edu_outlined,
                     "Riwayat Kontrol",
-                    () => Navigator.pushNamed(context, '/history'),
+                    () {
+                      if (widget.patientId != null) {
+                        Navigator.pushNamed(context, '/history',
+                            arguments: {'patientId': widget.patientId});
+                      } else {
+                        _showPatientIdError();
+                      }
+                    },
                   ),
                 ],
               ),
@@ -288,68 +347,67 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-    );
-  }
-
-  // Also update the quick access button navigation
-  Widget _quickAccessButton(
-    BuildContext context,
-    IconData icon,
-    String label,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: label == "Catat Pemeriksaan"
-          ? () async {
-              String? userPatientId = await getLoggedInUserPatientId();
-
-              if (!mounted) return;
-
-              if (userPatientId != null && userPatientId.isNotEmpty) {
-                Navigator.pushNamed(
-                  context,
-                  '/health',
-                  arguments: {'patientId': userPatientId},
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Tidak dapat menemukan data pasien untuk user ini.'),
-                    duration: Duration(seconds: 3),
-                  ),
-                );
-              }
-            }
-          : onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 30, color: Colors.blue),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: Colors.black87),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
+        items: const [
+          BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Beranda'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.calendar_today),
+              activeIcon: Icon(Icons.favorite),
+              label: 'Jadwal'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.favorite_outlined),
+              activeIcon: Icon(Icons.favorite),
+              label: 'Kesehatan'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.settings_outlined),
+              activeIcon: Icon(Icons.settings),
+              label: 'Pengaturan'),
         ],
       ),
     );
   }
 
-  // Update the _buildInfoButton method
+  Widget _quickAccessButton(
+      BuildContext context, IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 30, color: Colors.blue),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: 80,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildInfoButton({
     required BuildContext context,
     required String label,
@@ -358,41 +416,15 @@ class _HomePageState extends State<HomePage> {
   }) {
     return TextButton.icon(
       style: TextButton.styleFrom(
-        foregroundColor: Colors.white, // Warna teks dan ikon tombol
-        backgroundColor: Colors.white.withOpacity(
-          0.2,
-        ), // Background semi-transparan
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.white.withOpacity(0.2),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        iconColor: Colors.white, // Pastikan ikon juga putih
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap, // Kurangi area tap
       ),
       icon: Icon(icon, size: 14),
       label: Text(label),
-      onPressed: label == "Data Kesehatan"
-          ? () async {
-              String? userPatientId = await getLoggedInUserPatientId();
-
-              if (!mounted) return; // Check if widget is still mounted
-
-              if (userPatientId != null && userPatientId.isNotEmpty) {
-                Navigator.pushNamed(
-                  context,
-                  '/health',
-                  arguments: {'patientId': userPatientId},
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Tidak dapat menemukan data pasien untuk user ini.'),
-                    duration: Duration(seconds: 3),
-                  ),
-                );
-              }
-            }
-          : onPressed,
+      onPressed: onPressed,
     );
   }
 }

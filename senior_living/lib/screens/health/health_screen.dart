@@ -1,63 +1,47 @@
 import 'package:flutter/material.dart';
-import '../../services/api_service.dart';
 import 'health_record_screen.dart';
 
-class HealthScreen extends StatefulWidget {
-  const HealthScreen({Key? key}) : super(key: key);
+class HealthScreen extends StatelessWidget {
+  final int patientId; // Tambahkan parameter ini
 
-  @override
-  State<HealthScreen> createState() => _HealthScreenState();
-}
-
-class _HealthScreenState extends State<HealthScreen> {
-  final ApiService _apiService = ApiService();
-  String? patientId;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPatientId();
-  }
-
-  Future<void> _loadPatientId() async {
-    try {
-      final userData = await _apiService.getUserData();
-      setState(() {
-        patientId = userData?['patient_id']?.toString();
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
-        );
-      }
-    }
-  }
+  const HealthScreen({Key? key, required this.patientId}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Kesehatan'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Halaman Kesehatan untuk Patient ID: $patientId'),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                if (patientId != -1) {
+                  Navigator.pushNamed(
+                    context,
+                    '/history',
+                    arguments: {'patientId': patientId},
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text(
+                            'ID Pasien tidak valid untuk melihat riwayat.')),
+                  );
+                  print(
+                      "Error: Invalid patientId (-1) in HealthScreen, cannot navigate to history.");
+                }
+              },
+              child: const Text('Lihat Riwayat Kontrol'),
+            ),
+            // Tambahkan widget lain untuk halaman kesehatan di sini
+          ],
         ),
-      );
-    }
-
-    if (patientId == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Kesehatan'),
-        ),
-        body: const Center(
-          child: Text('Tidak dapat menemukan ID pasien'),
-        ),
-      );
-    }
-
-    return HealthRecordScreen(patientId: patientId!);
+      ),
+    );
   }
 }

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import '../screens/home_page.dart';
-import '../models/user_model.dart'; // Add User model import
+import '../models/user_model.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final void Function(UserModel user, int? patientId)? onLoginSuccess;
+
+  const LoginScreen({super.key, this.onLoginSuccess});
 
   @override
   _LoginScreenState createState() => _LoginScreenState();
@@ -20,44 +21,56 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _handleLogin() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
 
       final result = await _apiService.login(
         _emailController.text,
         _passwordController.text,
       );
 
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
 
       if (mounted) {
-        if (result != null && result['success'] == true) {
-          final user = User.fromJson(result['user'] as Map<String, dynamic>);
-          final userAge = user.age;
-          print("DEBUG: Parsed User Age in LoginScreen: $userAge");
-          print("DEBUG: Full User Data: ${user.toJson()}");
+        if (result != null &&
+            result['success'] == true &&
+            result['user'] != null) {
+          final userMap = result['user'] as Map<String, dynamic>;
+          final UserModel user = UserModel.fromJson(userMap);
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result['message'] ?? 'Login berhasil!')),
-          );
+          final int? patientId = user.patientId ?? user.patient?.id;
+          final String userName = user.name;
+          final int userAge = user.age ?? 0;
+          final String healthStatus =
+              user.patient?.medicalHistory ?? 'Tidak Diketahui';
 
-          Navigator.pushReplacementNamed(
-            context,
-            '/home',
-            arguments: {
-              'name': user.name,
-              'age': userAge,
-              'birth_date': user.birthDate,
-              'patient_id': user.patientId,
-              'status': 'Normal',
-            },
-          );
+          print(
+              "DEBUG LoginScreen: patientId: $patientId, userName: $userName, userAge: $userAge, healthStatus: $healthStatus");
+
+          widget.onLoginSuccess?.call(user, patientId);
+
+          if (patientId != null) {
+            Navigator.pushReplacementNamed(
+              context,
+              '/home_page',
+              arguments: {
+                'name': userName,
+                'age': userAge,
+                'healthStatus': healthStatus,
+                'patientId': patientId,
+              },
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content:
+                      Text('Gagal mendapatkan ID Pasien dari data login.')),
+            );
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result?['message'] ?? 'Login gagal.')),
+            SnackBar(
+                content: Text(result?['message'] ??
+                    'Login gagal. Periksa kembali email dan password Anda.')),
           );
         }
       }
@@ -88,6 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: "Email",
                       hintText: "example@gmail.com",
                       border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.email_outlined),
                     ),
                     keyboardType: TextInputType.emailAddress,
                     validator: (value) {
@@ -108,6 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       labelText: "Password",
                       hintText: "minimal 8 karakter",
                       border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscurePassword
@@ -138,7 +153,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black, // Warna tombol
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),

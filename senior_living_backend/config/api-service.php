@@ -26,5 +26,8 @@ return [
         'email' => 'required|email',
         'password' => 'required',
     ],
+    'services' => [
+        'hospital-visits' => \App\Filament\Resources\HospitalVisitResource\Api\HospitalVisitApiService::class,
+    ],
     'use-spatie-permission-middleware' => true,
 ];
