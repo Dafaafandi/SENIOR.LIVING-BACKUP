@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:senior_living/model.dart'; // Asumsi Blog adalah User di sini
 
 class Repository {
-  final String _baseUrl = 'http://127.0.0.1:8000/api/admin/users'; // Atau URL yang benar
+  final String _baseUrl = 'http://18.140.38.247/api/admin/users'; // Atau URL yang benar
   // Ganti dengan cara Anda mendapatkan token yang benar
   final String _tokenHardcode = "2|kxAMymJGqDLvYxdOX0LbeFeMS3xVBK2dcUchC2AU46ce922b";
 

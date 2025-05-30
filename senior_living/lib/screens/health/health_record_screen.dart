@@ -253,26 +253,11 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 _buildActionButton(
-                  label: 'Lihat Grafik',
-                  icon: Icons.show_chart, // Atau Icons.timeline
-                  color: orangeButton,
-                  onPressed: () {
-                    // TODO: Implementasi navigasi/tampilkan grafik
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Fitur Grafik belum tersedia')),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-                _buildActionButton(
                   label: 'Detail',
                   icon: Icons.info_outline,
                   color: detailButtonColor,
                   onPressed: () {
-                    // TODO: Implementasi navigasi/tampilkan detail
-                    _showRecordDetailDialog(
-                        record); // Tampilkan detail dalam dialog
+                    _showRecordDetailDialog(record);
                   },
                 ),
                 const SizedBox(width: 8),

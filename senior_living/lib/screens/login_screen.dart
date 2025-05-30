@@ -60,17 +60,35 @@ class _LoginScreenState extends State<LoginScreen> {
               },
             );
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content:
-                      Text('Gagal mendapatkan ID Pasien dari data login.')),
+            showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: const Text('Informasi'),
+                  content: const Text(
+                    'Akun Anda belum terhubung dengan data pasien. '
+                    'Silakan hubungi administrator untuk mengatur data pasien Anda.',
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      child: const Text('Login Ulang'),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _emailController.clear();
+                        _passwordController.clear();
+                      },
+                    ),
+                  ],
+                );
+              },
             );
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text(result?['message'] ??
-                    'Login gagal. Periksa kembali email dan password Anda.')),
+              content: Text(result?['message'] ??
+                  'Login gagal. Periksa kembali email dan password Anda.'),
+            ),
           );
         }
       }

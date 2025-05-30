@@ -12,7 +12,7 @@ import '../models/hospital_visit.dart'; // <-- Tambahkan import ini
 
 class ApiService {
   // Make all static constants const
-  static const String _serverBaseUrl = 'http://127.0.0.1:8000';
+  static const String _serverBaseUrl = 'http://18.140.38.247';
   static const String _publicApiBaseUrl = '$_serverBaseUrl/api';
   static const String _protectedApiBaseUrl = '$_serverBaseUrl/api/admin';
   static const String _tokenKey = 'auth_token';
@@ -138,15 +138,13 @@ class ApiService {
     required String password,
     required String passwordConfirmation,
   }) async {
-    final String _baseUrl = 'http://127.0.0.1:8000/api';
-    const String deviceName =
-        "flutter_app_device"; // Atau dapatkan dari device info
-
     try {
+      String deviceName = await _getDeviceName();
+
       final response = await http.post(
-        Uri.parse(_baseUrl),
+        Uri.parse('$_publicApiBaseUrl/register'),
         headers: {
-          'Content-Type': 'application/json; charset=UTF-8',
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: jsonEncode({
@@ -154,21 +152,31 @@ class ApiService {
           'email': email,
           'password': password,
           'password_confirmation': passwordConfirmation,
-          'device_name': deviceName,
+          'device_name': deviceName
         }),
       );
 
-      if (response.statusCode == 201) {
+      print(
+          'DEBUG Register Request URL: ${Uri.parse('$_publicApiBaseUrl/register')}');
+      print('DEBUG Register Request Body: ${jsonEncode({
+            'name': name,
+            'email': email,
+            'password': password,
+            'password_confirmation': passwordConfirmation,
+            'device_name': deviceName
+          })}');
+      print('DEBUG Register Response Status: ${response.statusCode}');
+      print('DEBUG Register Response Body: ${response.body}');
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
-        // Otomatis login setelah registrasi jika API mengembalikan token
         if (responseData.containsKey('token') &&
             responseData.containsKey('user')) {
           await _saveAuthData(responseData['token'], responseData['user']);
           return {
             'success': true,
             'user': responseData['user'],
-            'message': responseData['message'] ??
-                'Registrasi berhasil dan otomatis login.'
+            'message': responseData['message'] ?? 'Registrasi berhasil'
           };
         }
         return {
@@ -177,24 +185,21 @@ class ApiService {
         };
       } else {
         final errorData = jsonDecode(response.body);
-        String errorMessage =
-            'Registrasi gagal. Status: ${response.statusCode}';
+        String errorMessage = 'Registrasi gagal';
+
         if (errorData.containsKey('message')) {
           errorMessage = errorData['message'];
         } else if (errorData.containsKey('errors')) {
-          // Laravel validation errors
           final errors = errorData['errors'] as Map<String, dynamic>;
           errorMessage =
               errors.entries.map((e) => '${e.key}: ${e.value[0]}').join('\n');
         }
+
         return {'success': false, 'message': errorMessage};
       }
     } catch (e) {
-      print('Terjadi kesalahan saat registrasi: $e');
-      return {
-        'success': false,
-        'message': 'Terjadi kesalahan: ${e.toString()}'
-      };
+      print('Error during registration: $e');
+      return {'success': false, 'message': 'Terjadi kesalahan koneksi: $e'};
     }
   }
 
